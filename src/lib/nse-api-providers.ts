@@ -1,5 +1,13 @@
 import axios from 'axios'
-import type { Stock, ChartDataPoint, StockFundamentals, IndexData, Timeframe } from './api'
+import type { Stock, ChartDataPoint, IndexData, Timeframe } from './api'
+
+// NSE API index item interface
+interface NSEIndexItem {
+  indexName: string
+  last: number | string
+  change: number | string
+  percentChange: number | string
+}
 
 function createAPIClient(baseURL: string, headers: Record<string, string> = {}) {
   return axios.create({
@@ -47,7 +55,7 @@ export class YahooFinanceProvider {
         marketCap: meta?.marketCap ?? undefined,
         volume: quote?.volume?.[lastIdx] ?? undefined,
       }
-    } catch (e) {
+    } catch {
       return null
     }
   }
@@ -73,7 +81,7 @@ export class YahooFinanceProvider {
           volume: volumes[i] == null ? undefined : Number(volumes[i]),
         }))
         .filter((p) => Number.isFinite(p.price))
-    } catch (e) {
+    } catch {
       return []
     }
   }
@@ -103,7 +111,7 @@ export class AlphaVantageProvider {
         changePercent: prev ? (Number(q['09. change']) / prev) * 100 : 0,
         volume: Number(q['06. volume']) || undefined,
       }
-    } catch (e) {
+    } catch {
       return null
     }
   }
@@ -134,7 +142,7 @@ export class RapidAPINSEProvider {
         changePercent: Number(d.pChange),
         volume: Number(d.totalTradedVolume) || undefined,
       }
-    } catch (e) {
+    } catch {
       return null
     }
   }
@@ -148,7 +156,7 @@ export class UnofficialNSEProvider {
     try {
       const resp = await this.client.get('/allIndices')
       const list = resp.data?.data || []
-      const take = (name: string) => list.find((i: any) => i.indexName === name)
+      const take = (name: string) => list.find((i: NSEIndexItem) => i.indexName === name)
       const toIdx = (name: string): IndexData | null => {
         const it = take(name)
         if (!it) return null
@@ -157,7 +165,7 @@ export class UnofficialNSEProvider {
       return ['NIFTY 50', 'NIFTY BANK', 'NIFTY MIDCAP 100', 'NIFTY SMALLCAP 100']
         .map(toIdx)
         .filter(Boolean) as IndexData[]
-    } catch (e) {
+    } catch {
       return []
     }
   }
@@ -180,7 +188,7 @@ export class NSEAPIManager {
       try {
         const out = await step()
         if (out) return out
-      } catch (_) {}
+      } catch {}
     }
     return null
   }
@@ -194,5 +202,11 @@ export class NSEAPIManager {
     // Yahoo has decent free intraday
     const out = await this.yahoo.getStockIntraday(symbol, timeframe)
     return out
+  }
+
+  async searchStocks(_query: string): Promise<Stock[]> {
+    // For now, return empty array as this would need a proper search API
+    // The client-side code handles mock data separately
+    return []
   }
 }
