@@ -90,7 +90,7 @@ export class YahooFinanceProvider {
 // Alpha Vantage (free tier with rate limits)
 export class AlphaVantageProvider {
   private client = createAPIClient(process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co')
-  private apiKey = process.env.ALPHA_VANTAGE_API_KEY
+  private apiKey = process.env.ALPHA_VANTAGE_API_KEY || '314MCMYF7G4HHKU7' // Fallback to provided key
 
   get hasApiKey(): boolean {
     return !!this.apiKey
@@ -420,7 +420,8 @@ export class NSEAPIManager {
   indices = new MarketIndicesProvider()
 
   private getPrimaryProvider(): string {
-    return process.env.NEXT_PUBLIC_PRIMARY_PROVIDER || 'yahoo'
+    // Use Alpha Vantage as primary if we have an API key, otherwise Yahoo
+    return process.env.NEXT_PUBLIC_PRIMARY_PROVIDER || (this.alpha.hasApiKey ? 'alpha' : 'yahoo')
   }
 
   private async tryProviders<T>(
@@ -606,25 +607,61 @@ export class NSEAPIManager {
       stock.name.toLowerCase().includes(queryLower)
     ).slice(0, 10) // Limit to 10 results
     
-    // Return matched stocks with realistic mock data for now
-    // In a production app, you'd want to integrate with a real-time data provider
-    const stocksWithData: Stock[] = matchedStocks.map(stockInfo => {
-      // Generate realistic mock data for demonstration
-      const basePrice = Math.random() * 3000 + 100 // Random price between 100-3100
-      const change = (Math.random() - 0.5) * 100 // Random change between -50 to +50
-      const changePercent = (change / basePrice) * 100
+    // Try to get real data for matched stocks, fallback to mock data
+    const stocksWithData: Stock[] = []
+    
+    for (const stockInfo of matchedStocks) {
+      let stockData: Stock | null = null
       
-      return {
-        symbol: stockInfo.symbol,
-        name: stockInfo.name,
-        exchange: stockInfo.exchange,
-        ltp: Math.round(basePrice * 100) / 100,
-        change: Math.round(change * 100) / 100,
-        changePercent: Math.round(changePercent * 100) / 100,
-        volume: Math.floor(Math.random() * 10000000) + 1000000, // Random volume
-        marketCap: Math.floor(Math.random() * 500000) + 50000 // Random market cap in crores
+      // Try to get real data from Alpha Vantage first if available
+      if (this.alpha.hasApiKey) {
+        try {
+          stockData = await this.alpha.getStockDetails(stockInfo.symbol)
+          if (stockData) {
+            console.log(`✅ Alpha Vantage data for ${stockInfo.symbol}`)
+            stockData.name = stockInfo.name // Use full company name
+            stockData.exchange = stockInfo.exchange
+          }
+        } catch (error) {
+          console.error(`❌ Alpha Vantage failed for ${stockInfo.symbol}:`, error)
+        }
       }
-    })
+      
+      // Try Yahoo Finance as fallback
+      if (!stockData) {
+        try {
+          stockData = await this.yahoo.getStockDetails(stockInfo.symbol)
+          if (stockData) {
+            console.log(`✅ Yahoo Finance data for ${stockInfo.symbol}`)
+            stockData.name = stockInfo.name
+            stockData.exchange = stockInfo.exchange
+          }
+        } catch (error) {
+          console.error(`❌ Yahoo Finance failed for ${stockInfo.symbol}:`, error)
+        }
+      }
+      
+      // Final fallback to realistic mock data
+      if (!stockData) {
+        console.log(`⚠️ Using mock data for ${stockInfo.symbol}`)
+        const basePrice = Math.random() * 3000 + 100
+        const change = (Math.random() - 0.5) * 100
+        const changePercent = (change / basePrice) * 100
+        
+        stockData = {
+          symbol: stockInfo.symbol,
+          name: stockInfo.name,
+          exchange: stockInfo.exchange,
+          ltp: Math.round(basePrice * 100) / 100,
+          change: Math.round(change * 100) / 100,
+          changePercent: Math.round(changePercent * 100) / 100,
+          volume: Math.floor(Math.random() * 10000000) + 1000000,
+          marketCap: Math.floor(Math.random() * 500000) + 50000
+        }
+      }
+      
+      stocksWithData.push(stockData)
+    }
     
     return stocksWithData
   }
