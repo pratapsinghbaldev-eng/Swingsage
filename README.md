@@ -39,10 +39,18 @@ A modern, AI-powered stock analysis application for NSE and BSE markets, built w
 - Configurable via `NEXT_PUBLIC_ENABLE_MOCK_DATA` environment variable
 - Simulates live market conditions with price variations
 
-### Future Integration
-- NSE India API for official market data
-- RapidAPI providers for comprehensive stock data
-- Yahoo Finance as fallback option
+### Live Data Providers
+The app supports multiple data providers with automatic fallback:
+
+1. **RapidAPI NSE** (Premium) - Primary paid provider for NSE data
+2. **Yahoo Finance** (Free) - Primary free provider, used as default
+3. **Alpha Vantage** (Free with rate limits) - Secondary provider for quotes, charts, and fundamentals
+
+### Provider Configuration
+- **Default Order**: RapidAPI → Yahoo Finance → Alpha Vantage
+- **Primary Provider**: Use `NEXT_PUBLIC_PRIMARY_PROVIDER=alpha` to make Alpha Vantage primary
+- **Automatic Fallback**: If primary provider fails, automatically tries other providers
+- **Rate Limit Handling**: Alpha Vantage rate limits are handled gracefully with fallback
 
 ## 🚀 Quick Start
 
@@ -78,7 +86,7 @@ npm run dev -- -p 3001
 
 ## 🔧 Environment Variables
 
-Create a `.env.local` file in the root directory:
+Create a `.env.local` file in the root directory (copy from `.env.local.example`):
 
 ```bash
 # Mock Data Configuration
@@ -87,12 +95,24 @@ NEXT_PUBLIC_ENABLE_MOCK_DATA=true
 # API Configuration (for production)
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
 
+# Primary Data Provider (optional)
+# Set to 'alpha' to use Alpha Vantage as primary provider, 'yahoo' as fallback
+# Leave empty or set to 'yahoo' for default behavior (Yahoo primary, Alpha Vantage fallback)
+# NEXT_PUBLIC_PRIMARY_PROVIDER=yahoo
+
 # RapidAPI Configuration (optional)
 # RAPIDAPI_KEY=your_rapidapi_key_here
 # RAPIDAPI_HOST=indian-stock-exchange-api.p.rapidapi.com
 
 # Yahoo Finance (fallback)
 YAHOO_FINANCE_BASE_URL=https://query1.finance.yahoo.com
+
+# Alpha Vantage (optional; free tier with rate limits)
+ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
+ALPHA_VANTAGE_BASE_URL=https://www.alphavantage.co
+
+# Unofficial NSE (optional; use cautiously)
+# NSE_UNOFFICIAL_BASE_URL=https://www.nseindia.com/api
 ```
 
 ## 📱 Usage
@@ -301,41 +321,58 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 By default, the app runs with mock data. To enable live data:
 
-1) Create `.env.local` in `swingsage-app/` with at least:
+### 1) Get API Keys
+- **Alpha Vantage**: Sign up at [alphavantage.co](https://www.alphavantage.co/support/#api-key) (free tier: 25 requests/day, 5 requests/minute)
+- **RapidAPI**: Optional premium provider for enhanced NSE data
 
-```
+### 2) Configure Environment
+Create `.env.local` in `swingsage-app/` with:
+
+```bash
+# Enable real data
 NEXT_PUBLIC_ENABLE_MOCK_DATA=false
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
+
+# Primary provider selection (optional)
+# Set to 'alpha' to use Alpha Vantage as primary, 'yahoo' as fallback
+NEXT_PUBLIC_PRIMARY_PROVIDER=yahoo
 
 # Yahoo Finance (free; used for intraday and fallback)
 YAHOO_FINANCE_BASE_URL=https://query1.finance.yahoo.com
 
-# Alpha Vantage (optional; free)
-#ALPHA_VANTAGE_API_KEY=
-#ALPHA_VANTAGE_BASE_URL=https://www.alphavantage.co
+# Alpha Vantage (free tier with rate limits)
+ALPHA_VANTAGE_API_KEY=your_actual_alpha_vantage_key
+ALPHA_VANTAGE_BASE_URL=https://www.alphavantage.co
 
 # RapidAPI NSE (optional; paid)
-#RAPIDAPI_KEY=
-#RAPIDAPI_HOST=latest-stock-price.p.rapidapi.com
+# RAPIDAPI_KEY=your_rapidapi_key
+# RAPIDAPI_HOST=latest-stock-price.p.rapidapi.com
 
 # Unofficial NSE (optional; use cautiously)
-#NSE_UNOFFICIAL_BASE_URL=https://www.nseindia.com/api
+# NSE_UNOFFICIAL_BASE_URL=https://www.nseindia.com/api
 ```
 
-2) Restart the dev server after changing env vars:
-```
+### 3) Restart and Test
+```bash
 npm run dev
 ```
 
-3) Providers and fallback order used server-side:
-- RapidAPI (if keys present)
-- Yahoo Finance (free)
-- Alpha Vantage (if key present)
+### 4) Provider Behavior
+- **Default Order**: RapidAPI → Yahoo Finance → Alpha Vantage
+- **Alpha as Primary**: Set `NEXT_PUBLIC_PRIMARY_PROVIDER=alpha` to prioritize Alpha Vantage
+- **Automatic Fallback**: If primary fails, tries other providers automatically
+- **Rate Limit Handling**: Alpha Vantage rate limits trigger graceful fallback
 
-4) Notes:
-- Some providers enforce rate limits; use React Query cache and avoid excessive refresh.
-- Fundamentals fields may be partial until a dedicated fundamentals provider is added.
-- Keep API keys server-side only; never prefix them with NEXT_PUBLIC_.
+### 5) Supported Symbols
+- **NSE Stocks**: Use symbols like `RELIANCE`, `TCS`, `INFY` (app adds `.NS` suffix automatically)
+- **BSE Stocks**: Use symbols like `RELIANCE.BSE`, `TCS.BSE` for BSE exchange
+- **Search**: Try symbols like RELIANCE, TCS, HDFCBANK
+
+### 6) Notes
+- Alpha Vantage free tier: 25 requests/day, 5 requests/minute
+- Use React Query caching to minimize API calls
+- Keep API keys server-side only (never use `NEXT_PUBLIC_` prefix)
+- Fundamentals data requires Alpha Vantage API key
 
 ## 🧪 Verifying Live Data
 

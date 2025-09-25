@@ -7,6 +7,10 @@ export async function GET(
 ) {
   try {
     const { symbol } = await params
+    const startTime = Date.now()
+    
+    console.log(`🔍 [API] Stock Details Request: ${symbol}`)
+    console.log(`📊 [API] Environment: MOCK_DATA=${process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA}, PRIMARY_PROVIDER=${process.env.NEXT_PUBLIC_PRIMARY_PROVIDER}`)
     
     if (!symbol) {
       return NextResponse.json(
@@ -20,8 +24,10 @@ export async function GET(
     }
     
     const stock = await getStockDetails(symbol.toUpperCase())
+    const responseTime = Date.now() - startTime
     
     if (!stock) {
+      console.log(`❌ [API] Stock not found: ${symbol} (${responseTime}ms)`)
       return NextResponse.json(
         {
           success: false,
@@ -32,11 +38,14 @@ export async function GET(
       )
     }
     
+    console.log(`✅ [API] Stock Details Success: ${symbol} - Price: ${stock.ltp} (${responseTime}ms)`)
+    
     return NextResponse.json({
       success: true,
       stock,
       symbol,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime
     })
   } catch (error) {
     console.error('API Error - Stock Details:', error)

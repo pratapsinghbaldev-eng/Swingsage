@@ -164,9 +164,12 @@ describe('SearchScreen', () => {
     const searchInput = screen.getByPlaceholderText('Search stocks by name or symbol...')
     await user.type(searchInput, 'ERRORTEST')
 
-    // Wait for debounce and error state
+    // Wait for debounce and error state (React Query retries 2 times with exponential backoff)
     await waitFor(() => {
-      expect(screen.getByText('Try Again')).toBeInTheDocument()
-    }, { timeout: 3000 })
+      expect(screen.getByText('Failed to search stocks. Please check your connection and try again.')).toBeInTheDocument()
+    }, { timeout: 10000 })
+    
+    // Check for Try Again button
+    expect(screen.getByText('Try Again')).toBeInTheDocument()
   })
 })

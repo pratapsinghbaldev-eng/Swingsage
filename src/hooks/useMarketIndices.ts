@@ -5,10 +5,10 @@ export function useMarketIndices() {
   return useQuery({
     queryKey: ['market', 'indices'],
     queryFn: getMarketIndices,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 10 * 1000, // 10 seconds
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    refetchInterval: 2 * 60 * 1000, // Refetch every 2 minutes
+    refetchInterval: 15 * 1000, // Refetch every 15 seconds
   })
 }

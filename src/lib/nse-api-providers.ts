@@ -87,33 +87,181 @@ export class YahooFinanceProvider {
   }
 }
 
-// Alpha Vantage (free tier)
+// Alpha Vantage (free tier with rate limits)
 export class AlphaVantageProvider {
   private client = createAPIClient(process.env.ALPHA_VANTAGE_BASE_URL || 'https://www.alphavantage.co')
   private apiKey = process.env.ALPHA_VANTAGE_API_KEY
 
-  async getStockDetails(symbol: string): Promise<Stock | null> {
+  get hasApiKey(): boolean {
+    return !!this.apiKey
+  }
+
+  private toAlphaVantageSymbol(symbol: string): string {
+    // Support both NSE (.NS) and BSE (.BSE) suffixes, default to NSE
+    if (symbol.endsWith('.NS')) return symbol
+    if (symbol.endsWith('.BSE')) return symbol
+    return `${symbol}.NS`
+  }
+
+  async getQuote(symbol: string): Promise<Stock | null> {
     if (!this.apiKey) return null
     try {
+      const avSymbol = this.toAlphaVantageSymbol(symbol)
       const resp = await this.client.get('/query', {
-        params: { function: 'GLOBAL_QUOTE', symbol: `${symbol}.BSE`, apikey: this.apiKey },
+        params: { function: 'GLOBAL_QUOTE', symbol: avSymbol, apikey: this.apiKey },
       })
+
+      // Check for rate limit error
+      if (resp.data?.['Note']) {
+        console.warn('Alpha Vantage rate limit reached:', resp.data.Note)
+        return null
+      }
+
       const q = resp.data?.['Global Quote']
       if (!q) return null
+
       const price = Number(q['05. price'])
-      const prev = price - Number(q['09. change'])
+      const change = Number(q['09. change'])
+      const previousClose = Number(q['08. previous close'])
+      const volume = Number(q['06. volume'])
+
+      if (!Number.isFinite(price) || !Number.isFinite(previousClose)) return null
+
+      const changePercent = previousClose ? (change / previousClose) * 100 : 0
+
       return {
-        symbol,
-        name: symbol,
-        exchange: 'BSE',
+        symbol: symbol.replace('.NS', '').replace('.BSE', ''), // Return clean symbol
+        name: symbol.replace('.NS', '').replace('.BSE', ''), // Use symbol as name (Alpha Vantage doesn't provide company names in GLOBAL_QUOTE)
+        exchange: avSymbol.endsWith('.NS') ? 'NSE' : 'BSE',
         ltp: price,
-        change: Number(q['09. change']),
-        changePercent: prev ? (Number(q['09. change']) / prev) * 100 : 0,
-        volume: Number(q['06. volume']) || undefined,
+        change: change,
+        changePercent: changePercent,
+        volume: Number.isFinite(volume) ? volume : undefined,
+        previousClose: previousClose,
       }
-    } catch {
+    } catch (error) {
+      console.error('Alpha Vantage getQuote error:', error)
       return null
     }
+  }
+
+  async getIntraday(symbol: string, interval = "5min"): Promise<ChartDataPoint[]> {
+    if (!this.apiKey) return []
+    try {
+      const avSymbol = this.toAlphaVantageSymbol(symbol)
+      const resp = await this.client.get('/query', {
+        params: {
+          function: 'TIME_SERIES_INTRADAY',
+          symbol: avSymbol,
+          interval: interval,
+          apikey: this.apiKey,
+          outputsize: 'compact' // Get last 100 data points
+        },
+      })
+
+      // Check for rate limit error
+      if (resp.data?.['Note']) {
+        console.warn('Alpha Vantage rate limit reached:', resp.data.Note)
+        return []
+      }
+
+      const timeSeries = resp.data?.['Time Series (5min)'] || resp.data?.['Time Series (1min)']
+      if (!timeSeries) return []
+
+      const dataPoints: ChartDataPoint[] = []
+
+      // Type the Alpha Vantage time series response
+      type AlphaBar = {
+        '1. open': string
+        '2. high': string
+        '3. low': string
+        '4. close': string
+        '5. volume': string
+      }
+      type AlphaSeries = Record<string, AlphaBar>
+
+      // Safely cast the time series data
+      const typedTimeSeries = timeSeries as AlphaSeries
+
+      for (const timestamp of Object.keys(typedTimeSeries)) {
+        const values = typedTimeSeries[timestamp]
+        const price = Number(values['4. close'])
+        const volume = Number(values['5. volume'])
+
+        if (Number.isFinite(price)) {
+          dataPoints.push({
+            time: new Date(timestamp).toISOString(),
+            price: price,
+            volume: Number.isFinite(volume) ? volume : undefined,
+          })
+        }
+      }
+
+      // Sort by timestamp ascending (oldest first)
+      return dataPoints.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+    } catch (error) {
+      console.error('Alpha Vantage getIntraday error:', error)
+      return []
+    }
+  }
+
+  async getFundamentals(symbol: string): Promise<import('./api').StockFundamentals | null> {
+    if (!this.apiKey) return null
+    try {
+      const avSymbol = this.toAlphaVantageSymbol(symbol)
+      const resp = await this.client.get('/query', {
+        params: { function: 'OVERVIEW', symbol: avSymbol, apikey: this.apiKey },
+      })
+
+      // Check for rate limit error
+      if (resp.data?.['Note']) {
+        console.warn('Alpha Vantage rate limit reached:', resp.data.Note)
+        return null
+      }
+
+      const data = resp.data
+      if (!data || !data.Symbol) return null
+
+      // Parse market cap from string (e.g., "1658000000000" to number in crores)
+      const marketCapStr = data.MarketCapitalization
+      const marketCap = marketCapStr ? parseFloat(marketCapStr) / 10000000 : 0 // Convert to crores
+
+      return {
+        symbol: symbol.replace('.NS', '').replace('.BSE', ''),
+        marketCap: marketCap,
+        peRatio: data.PERatio ? Number(data.PERatio) : null,
+        eps: data.EPS ? Number(data.EPS) : null,
+        week52High: data['52WeekHigh'] ? Number(data['52WeekHigh']) : 0,
+        week52Low: data['52WeekLow'] ? Number(data['52WeekLow']) : 0,
+        volume: data.Volume ? Number(data.Volume) : 0,
+        avgVolume: null, // Alpha Vantage doesn't provide average volume in OVERVIEW
+        sector: data.Sector || 'N/A',
+        industry: data.Industry,
+        dividendYield: data.DividendYield ? Number(data.DividendYield) : null,
+        bookValue: data.BookValue ? Number(data.BookValue) : null,
+        pbRatio: data.PriceToBookRatio ? Number(data.PriceToBookRatio) : null,
+      }
+    } catch (error) {
+      console.error('Alpha Vantage getFundamentals error:', error)
+      return null
+    }
+  }
+
+  async getStockDetails(symbol: string): Promise<Stock | null> {
+    return this.getQuote(symbol)
+  }
+
+  async getStockIntraday(symbol: string, timeframe: Timeframe): Promise<ChartDataPoint[]> {
+    // Map timeframes to Alpha Vantage intervals
+    const intervalMap: Record<Timeframe, string> = {
+      '1D': '5min',
+      '1W': '15min',
+      '1M': '30min',
+      '3M': '60min',
+      '1Y': 'daily'
+    }
+
+    return this.getIntraday(symbol, intervalMap[timeframe])
   }
 }
 
@@ -177,20 +325,62 @@ export class NSEAPIManager {
   rapid = new RapidAPINSEProvider()
   nse = new UnofficialNSEProvider()
 
-  async getStockDetails(symbol: string): Promise<Stock | null> {
-    // Try in order: Rapid (if configured) → Yahoo → Alpha
-    const chain = [
-      async () => this.rapid.getStockDetails(symbol),
-      async () => this.yahoo.getStockDetails(symbol),
-      async () => this.alpha.getStockDetails(symbol),
-    ]
-    for (const step of chain) {
-      try {
-        const out = await step()
-        if (out) return out
-      } catch {}
+  private getPrimaryProvider(): string {
+    return process.env.NEXT_PUBLIC_PRIMARY_PROVIDER || 'yahoo'
+  }
+
+  private async tryProviders<T>(
+    providers: (() => Promise<T | null>)[],
+    fallbackChain?: (() => Promise<T | null>)[]
+  ): Promise<T | null> {
+    const primary = this.getPrimaryProvider()
+
+    // Try primary provider first if it's not in the default chain
+    if (primary === 'alpha' && this.alpha.hasApiKey) {
+      const alphaResult = await providers.find(p => p.toString().includes('alpha'))?.()
+      if (alphaResult) return alphaResult
     }
+
+    // Try fallback chain
+    if (fallbackChain) {
+      for (const step of fallbackChain) {
+        try {
+          const out = await step()
+          if (out) return out
+        } catch {}
+      }
+    }
+
     return null
+  }
+
+  async getStockDetails(symbol: string): Promise<Stock | null> {
+    const primary = this.getPrimaryProvider()
+    console.log(`🔍 [NSEAPIManager] getStockDetails(${symbol}) - Primary provider: ${primary}`)
+
+    if (primary === 'alpha' && this.alpha.hasApiKey) {
+      console.log('📡 [NSEAPIManager] Trying Alpha Vantage first...')
+      // Try Alpha Vantage first
+      const alphaResult = await this.alpha.getStockDetails(symbol)
+      if (alphaResult) {
+        console.log('✅ [NSEAPIManager] Alpha Vantage success')
+        return alphaResult
+      }
+      console.log('❌ [NSEAPIManager] Alpha Vantage failed, falling back...')
+
+      // Fallback to Yahoo and Rapid
+      return this.tryProviders(
+        [() => this.yahoo.getStockDetails(symbol), () => this.rapid.getStockDetails(symbol)],
+        [() => this.yahoo.getStockDetails(symbol), () => this.rapid.getStockDetails(symbol)]
+      )
+    }
+
+    console.log('📡 [NSEAPIManager] Using default provider chain: Rapid → Yahoo → Alpha')
+    // Default order: Rapid (if configured) → Yahoo → Alpha
+    return this.tryProviders(
+      [() => this.rapid.getStockDetails(symbol), () => this.yahoo.getStockDetails(symbol), () => this.alpha.getStockDetails(symbol)],
+      [() => this.rapid.getStockDetails(symbol), () => this.yahoo.getStockDetails(symbol), () => this.alpha.getStockDetails(symbol)]
+    )
   }
 
   async getMarketIndices(): Promise<IndexData[]> {
@@ -199,12 +389,42 @@ export class NSEAPIManager {
   }
 
   async getStockIntraday(symbol: string, timeframe: Timeframe): Promise<ChartDataPoint[]> {
-    // Yahoo has decent free intraday
-    const out = await this.yahoo.getStockIntraday(symbol, timeframe)
-    return out
+    const primary = this.getPrimaryProvider()
+
+    if (primary === 'alpha' && this.alpha.hasApiKey) {
+      // Try Alpha Vantage first
+      const alphaResult = await this.alpha.getStockIntraday(symbol, timeframe)
+      if (alphaResult.length > 0) return alphaResult
+
+      // Fallback to Yahoo
+      return this.yahoo.getStockIntraday(symbol, timeframe)
+    }
+
+    // Default: Yahoo first, then Alpha Vantage
+    const yahooResult = await this.yahoo.getStockIntraday(symbol, timeframe)
+    if (yahooResult.length > 0) return yahooResult
+
+    return this.alpha.getStockIntraday(symbol, timeframe)
+  }
+
+  async getStockFundamentals(symbol: string): Promise<import('./api').StockFundamentals | null> {
+    const primary = this.getPrimaryProvider()
+
+    if (primary === 'alpha' && this.alpha.hasApiKey) {
+      // Try Alpha Vantage first
+      const alphaResult = await this.alpha.getFundamentals(symbol)
+      if (alphaResult) return alphaResult
+
+      // For now, no fallback for fundamentals since other providers don't implement it
+      return null
+    }
+
+    // Default: Only Alpha Vantage supports fundamentals
+    return this.alpha.getFundamentals(symbol)
   }
 
   async searchStocks(_query: string): Promise<Stock[]> {
+    void _query // Mark as intentionally unused
     // For now, return empty array as this would need a proper search API
     // The client-side code handles mock data separately
     return []

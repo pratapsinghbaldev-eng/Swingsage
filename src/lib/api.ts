@@ -11,6 +11,7 @@ export interface Stock {
   exchange: 'NSE' | 'BSE'
   marketCap?: number
   volume?: number
+  previousClose?: number
 }
 
 export interface IndexData {
@@ -426,7 +427,7 @@ export async function getStockFundamentals(symbol: string): Promise<StockFundame
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 400))
-    
+
     const fundamentals = MOCK_FUNDAMENTALS[symbol]
     if (fundamentals) {
       // Add some slight randomization to volume
@@ -435,7 +436,7 @@ export async function getStockFundamentals(symbol: string): Promise<StockFundame
         volume: Math.floor(fundamentals.volume * (0.8 + Math.random() * 0.4))
       }
     }
-    
+
     // Generate basic fundamentals for stocks not in mock data
     const stock = MOCK_STOCKS.find(s => s.symbol === symbol)
     if (stock) {
@@ -455,13 +456,17 @@ export async function getStockFundamentals(symbol: string): Promise<StockFundame
         pbRatio: null
       }
     }
-    
+
     return null
   }
 
   try {
     if (isServer) {
-      // Build minimal fundamentals from available live details
+      // Use the enhanced NSEAPIManager with Alpha Vantage support
+      const fundamentals = await nseAPI.getStockFundamentals(symbol)
+      if (fundamentals) return fundamentals
+
+      // Fallback to building minimal fundamentals from available live details
       const live = await nseAPI.getStockDetails(symbol)
       if (!live) return null
       return {

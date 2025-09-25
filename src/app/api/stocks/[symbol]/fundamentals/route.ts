@@ -7,6 +7,9 @@ export async function GET(
 ) {
   try {
     const { symbol } = await params
+    const startTime = Date.now()
+    
+    console.log(`📈 [API] Fundamentals Request: ${symbol}`)
     
     if (!symbol) {
       return NextResponse.json(
@@ -20,8 +23,10 @@ export async function GET(
     }
     
     const fundamentals = await getStockFundamentals(symbol.toUpperCase())
+    const responseTime = Date.now() - startTime
     
     if (!fundamentals) {
+      console.log(`❌ [API] Fundamentals not found: ${symbol} (${responseTime}ms)`)
       return NextResponse.json(
         {
           success: false,
@@ -32,11 +37,14 @@ export async function GET(
       )
     }
     
+    console.log(`✅ [API] Fundamentals Success: ${symbol} - PE: ${fundamentals.peRatio}, Market Cap: ${fundamentals.marketCap} cr (${responseTime}ms)`)
+    
     return NextResponse.json({
       success: true,
       fundamentals,
       symbol,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      responseTime
     })
   } catch (error) {
     console.error('API Error - Stock Fundamentals:', error)

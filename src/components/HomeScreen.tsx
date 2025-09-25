@@ -1,15 +1,26 @@
 'use client'
 
-import { Search, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Search, TrendingUp, TrendingDown, RefreshCw, X } from 'lucide-react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
+import { useDebounce } from 'use-debounce'
 import { useMarketIndices } from '@/hooks/useMarketIndices'
+import { useStockSearch } from '@/hooks/useStockSearch'
 import ErrorMessage from '@/components/ui/ErrorMessage'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 interface HomeScreenProps {
-  onSearchClick: () => void
+  onSearchClick?: () => void
 }
 
 export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
+  const router = useRouter()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [debouncedQuery] = useDebounce(searchQuery, 300)
+  const searchRef = useRef<HTMLDivElement>(null)
+  
   const { 
     data: indices, 
     isLoading, 
@@ -18,8 +29,53 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
     isFetching 
   } = useMarketIndices()
 
+  const { 
+    data: searchResults, 
+    isLoading: isSearchLoading 
+  } = useStockSearch(debouncedQuery, debouncedQuery.length >= 2)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // Show dropdown when there are search results
+  useEffect(() => {
+    if (debouncedQuery.length >= 2 && searchResults && searchResults.length > 0) {
+      setShowDropdown(true)
+    } else {
+      setShowDropdown(false)
+    }
+  }, [debouncedQuery, searchResults])
+
   const handleRefresh = () => {
     refetch()
+  }
+
+  const handleStockSelect = (symbol: string) => {
+    router.push(`/stock/${symbol}`)
+    setSearchQuery('')
+    setShowDropdown(false)
+  }
+
+  const handleSearchFocus = () => {
+    if (debouncedQuery.length >= 2 && searchResults && searchResults.length > 0) {
+      setShowDropdown(true)
+    }
+  }
+
+  const clearSearch = () => {
+    setSearchQuery('')
+    setShowDropdown(false)
   }
 
   const formatNumber = (num: number, decimals: number = 2) => {
@@ -43,9 +99,9 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+          <div className="flex items-center h-16 space-x-4">
             {/* Logo and Brand */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 flex-shrink-0">
               <Image
                 src="/logo.png"
                 alt="SwingSage Logo"
@@ -56,14 +112,74 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
               <h1 className="text-xl font-bold text-gray-900">SwingSage</h1>
             </div>
 
-            {/* Search Icon */}
-            <button
-              onClick={onSearchClick}
-              className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-200 shadow-md hover:shadow-lg"
-              aria-label="Search stocks"
-            >
-              <Search className="w-5 h-5" />
-            </button>
+            {/* Search Bar */}
+            <div className="flex-1 max-w-md ml-8" ref={searchRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search stocks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={handleSearchFocus}
+                  className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={clearSearch}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                {isSearchLoading && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                )}
+
+                {/* Search Dropdown */}
+                {showDropdown && searchResults && searchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                    {searchResults.slice(0, 8).map((stock) => (
+                      <button
+                        key={`${stock.exchange}:${stock.symbol}`}
+                        onClick={() => handleStockSelect(stock.symbol)}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 flex justify-between items-center"
+                      >
+                        <div>
+                          <div className="font-medium text-gray-900 text-sm">
+                            {stock.symbol}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate">
+                            {stock.name}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-900">
+                            ₹{stock.ltp.toFixed(2)}
+                          </div>
+                          <div className={`text-xs ${getChangeColor(stock.change)}`}>
+                            {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent >= 0 ? '+' : ''}{stock.changePercent.toFixed(2)}%)
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Search Icon for mobile */}
+            {onSearchClick && (
+              <button
+                onClick={onSearchClick}
+                className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-200 shadow-md hover:shadow-lg md:hidden"
+                aria-label="Search stocks"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
       </header>
