@@ -189,7 +189,7 @@ export async function searchStocks(query: string): Promise<Stock[]> {
     return []
   }
 
-  // Use mock data if enabled
+  // Use mock data only if explicitly enabled
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -228,6 +228,7 @@ export async function searchStocks(query: string): Promise<Stock[]> {
 
 // Get market indices
 export async function getMarketIndices(): Promise<IndexData[]> {
+  // Use mock data only if explicitly enabled
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 300))
@@ -256,6 +257,7 @@ export async function getMarketIndices(): Promise<IndexData[]> {
 
 // Get stock details
 export async function getStockDetails(symbol: string): Promise<Stock | null> {
+  // Use mock data only if explicitly enabled
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 400))
@@ -402,6 +404,7 @@ function generateMockIntradayData(symbol: string, timeframe: Timeframe): ChartDa
 
 // Get stock intraday/historical data
 export async function getStockIntraday(symbol: string, timeframe: Timeframe): Promise<ChartDataPoint[]> {
+  // Use mock data only if explicitly enabled
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 600))
@@ -424,6 +427,7 @@ export async function getStockIntraday(symbol: string, timeframe: Timeframe): Pr
 
 // Get stock fundamentals
 export async function getStockFundamentals(symbol: string): Promise<StockFundamentals | null> {
+  // Use mock data only if explicitly enabled
   if (process.env.NEXT_PUBLIC_ENABLE_MOCK_DATA === 'true') {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 400))
