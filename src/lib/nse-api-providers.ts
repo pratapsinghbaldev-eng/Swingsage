@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Stock, ChartDataPoint, IndexData, Timeframe } from './api'
+import type { Stock, ChartDataPoint, IndexData, Timeframe, DailyBar } from './api'
 
 // NSE API index item interface
 interface NSEIndexItem {
@@ -81,6 +81,44 @@ export class YahooFinanceProvider {
           volume: volumes[i] == null ? undefined : Number(volumes[i]),
         }))
         .filter((p) => Number.isFinite(p.price))
+    } catch {
+      return []
+    }
+  }
+
+  async getDailyBars(symbol: string, limit: number = 100): Promise<DailyBar[]> {
+    try {
+      const ySymbol = this.toYahooSymbol(symbol)
+      const resp = await this.client.get(`/v8/finance/chart/${encodeURIComponent(ySymbol)}`, {
+        params: { interval: '1d', range: '1y' },
+      })
+      const result = resp.data?.chart?.result?.[0]
+      if (!result) return []
+      const timestamps: number[] = result.timestamp || []
+      const quote = result.indicators?.quote?.[0]
+      const opens: Array<number | null> = quote?.open || []
+      const highs: Array<number | null> = quote?.high || []
+      const lows: Array<number | null> = quote?.low || []
+      const closes: Array<number | null> = quote?.close || []
+      const volumes: Array<number | null> = quote?.volume || []
+
+      const bars: DailyBar[] = []
+      for (let i = 0; i < timestamps.length; i++) {
+        const o = opens[i]
+        const h = highs[i]
+        const l = lows[i]
+        const c = closes[i]
+        if (o == null || h == null || l == null || c == null) continue
+        bars.push({
+          time: new Date(timestamps[i] * 1000).toISOString(),
+          open: Number(o),
+          high: Number(h),
+          low: Number(l),
+          close: Number(c),
+          volume: volumes[i] == null ? undefined : Number(volumes[i])
+        })
+      }
+      return bars.slice(-limit)
     } catch {
       return []
     }
@@ -201,6 +239,41 @@ export class AlphaVantageProvider {
       return dataPoints.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
     } catch (error) {
       console.error('Alpha Vantage getIntraday error:', error)
+      return []
+    }
+  }
+
+  async getDailyBars(symbol: string, limit: number = 100): Promise<DailyBar[]> {
+    if (!this.apiKey) return []
+    try {
+      const avSymbol = this.toAlphaVantageSymbol(symbol)
+      const resp = await this.client.get('/query', {
+        params: { function: 'TIME_SERIES_DAILY_ADJUSTED', symbol: avSymbol, apikey: this.apiKey, outputsize: 'compact' }
+      })
+
+      // Rate limit note
+      if (resp.data?.['Note']) {
+        console.warn('Alpha Vantage rate limit reached:', resp.data.Note)
+        return []
+      }
+
+      const series = resp.data?.['Time Series (Daily)']
+      if (!series) return []
+      const bars: DailyBar[] = []
+      const keys = Object.keys(series).sort() // ascending by date
+      for (const ts of keys) {
+        const d = series[ts]
+        const o = Number(d['1. open'])
+        const h = Number(d['2. high'])
+        const l = Number(d['3. low'])
+        const c = Number(d['4. close'])
+        const v = Number(d['6. volume'])
+        if (!Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue
+        bars.push({ time: new Date(ts).toISOString(), open: o, high: h, low: l, close: c, volume: Number.isFinite(v) ? v : undefined })
+      }
+      return bars.slice(-limit)
+    } catch (error) {
+      console.error('Alpha Vantage getDailyBars error:', error)
       return []
     }
   }
@@ -664,5 +737,23 @@ export class NSEAPIManager {
     }
     
     return stocksWithData
+  }
+
+  async getDailyOHLC(symbol: string, limit: number = 100): Promise<DailyBar[]> {
+    const primary = this.getPrimaryProvider()
+    // Try Alpha first if configured
+    if (primary === 'alpha' && this.alpha.hasApiKey) {
+      const alphaBars = await this.alpha.getDailyBars(symbol, limit)
+      if (alphaBars.length > 0) return alphaBars
+    }
+    // Yahoo fallback
+    const yBars = await this.yahoo.getDailyBars(symbol, limit)
+    if (yBars.length > 0) return yBars
+    // Final attempt with Alpha (if not primary)
+    if (this.alpha.hasApiKey) {
+      const alphaBars2 = await this.alpha.getDailyBars(symbol, limit)
+      if (alphaBars2.length > 0) return alphaBars2
+    }
+    return []
   }
 }

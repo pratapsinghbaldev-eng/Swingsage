@@ -6,7 +6,10 @@ import {
   calculateIndicators,
   formatIndicatorValue,
   getRSIInterpretation,
-  getSignalColor
+  getSignalColor,
+  macd,
+  bollinger,
+  atr,
 } from '../indicators'
 
 describe('Technical Indicators', () => {
@@ -166,6 +169,32 @@ describe('Technical Indicators', () => {
         expect(getSignalColor('BEARISH')).toBe('text-red-600')
         expect(getSignalColor('NEUTRAL')).toBe('text-gray-600')
       })
+    })
+  })
+
+  describe('MACD/Bollinger/ATR', () => {
+    it('should compute MACD structures', () => {
+      const prices = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 5) * 5)
+      const m = macd(prices)
+      expect(m.macdLine.length).toBe(prices.length)
+      expect(m.signalLine.length).toBe(prices.length)
+      expect(m.histogram.length).toBe(prices.length)
+    })
+
+    it('should compute Bollinger bands', () => {
+      const prices = Array.from({ length: 30 }, (_, i) => 100 + i)
+      const b = bollinger(prices)
+      expect(b.upper.length).toBe(prices.length)
+      expect(b.mid.length).toBe(prices.length)
+      expect(b.lower.length).toBe(prices.length)
+    })
+
+    it('should compute ATR', () => {
+      const highs = [11,12,13,14,15,16,17,18,19,20]
+      const lows =  [10,11,12,13,14,15,16,17,18,19]
+      const closes=[10.5,11.5,12.5,13.5,14.5,15.5,16.5,17.5,18.5,19.5]
+      const a = atr(highs, lows, closes)
+      expect(a.length).toBe(highs.length)
     })
   })
 })

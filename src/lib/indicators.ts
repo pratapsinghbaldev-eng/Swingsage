@@ -73,6 +73,65 @@ export function ema(values: number[], period: number = 50): (number | null)[] {
 }
 
 /**
+ * MACD (12,26,9)
+ */
+export function macd(values: number[], fast: number = 12, slow: number = 26, signalPeriod: number = 9) {
+  const emaFast = ema(values, fast)
+  const emaSlow = ema(values, slow)
+  const macdLine: (number | null)[] = values.map((_, i) => {
+    if (emaFast[i] == null || emaSlow[i] == null) return null
+    return (emaFast[i] as number) - (emaSlow[i] as number)
+  })
+  const signalLine = ema(macdLine.map(v => v == null ? 0 : v), signalPeriod)
+  const histogram = macdLine.map((v, i) => (v == null || signalLine[i] == null) ? null : v - (signalLine[i] as number))
+  return { macdLine, signalLine, histogram }
+}
+
+/**
+ * Bollinger Bands (SMA +/- k*std)
+ */
+export function bollinger(values: number[], period: number = 20, k: number = 2) {
+  const mid = sma(values, period)
+  const upper: (number | null)[] = []
+  const lower: (number | null)[] = []
+  for (let i = 0; i < values.length; i++) {
+    if (i < period - 1) {
+      upper.push(null)
+      lower.push(null)
+      continue
+    }
+    const window = values.slice(i - period + 1, i + 1)
+    const mean = mid[i] as number
+    const variance = window.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / period
+    const std = Math.sqrt(variance)
+    upper.push(mean + k * std)
+    lower.push(mean - k * std)
+  }
+  return { upper, mid, lower }
+}
+
+/**
+ * Average True Range (ATR)
+ */
+export function atr(highs: number[], lows: number[], closes: number[], period: number = 14): (number | null)[] {
+  const trs: number[] = []
+  for (let i = 0; i < highs.length; i++) {
+    if (i === 0) {
+      trs.push(highs[i] - lows[i])
+    } else {
+      const tr = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      )
+      trs.push(tr)
+    }
+  }
+  // Use EMA of TR for ATR
+  return ema(trs, period)
+}
+
+/**
  * Calculate Relative Strength Index (RSI)
  * @param values Array of price values
  * @param period Number of periods for RSI calculation (default 14)

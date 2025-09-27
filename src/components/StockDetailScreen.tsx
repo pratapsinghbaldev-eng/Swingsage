@@ -10,6 +10,7 @@ import Tabs, { type TabItem } from '@/components/tabs/Tabs'
 import StockChart, { TimeframeSelector } from '@/components/charts/StockChart'
 import ErrorMessage from '@/components/ui/ErrorMessage'
 import { formatIndicatorValue, getRSIInterpretation, getSignalColor } from '@/lib/indicators'
+import { useStockSignals } from '@/hooks/useStockSignals'
 
 interface StockDetailScreenProps {
   stock: Stock
@@ -23,6 +24,7 @@ export default function StockDetailScreen({ stock, onBack }: StockDetailScreenPr
   const { data: chartData, isLoading: chartLoading, error: chartError, refetch: refetchChart } = useStockIntraday(stock.symbol, currentTimeframe)
   const { data: fundamentals, isLoading: fundamentalsLoading, error: fundamentalsError, refetch: refetchFundamentals } = useStockFundamentals(stock.symbol)
   const indicators = useStockIndicators(chartData || [])
+  const { data: signalsData, isLoading: signalsLoading, error: signalsError, refetch: refetchSignals } = useStockSignals(stock.symbol)
 
   // Utility functions
   const formatNumber = (num: number, decimals: number = 2) => {
@@ -314,6 +316,59 @@ export default function StockDetailScreen({ stock, onBack }: StockDetailScreenPr
     </div>
   )
 
+  const SignalsTab = () => {
+    type SignalFilter = 'ALL' | 'RSI' | 'EMA' | 'MACD' | 'BOLLINGER' | 'ATR'
+    const [filter, setFilter] = useState<SignalFilter>('ALL')
+    const all = signalsData?.signals || []
+    const list = filter === 'ALL' ? all : all.filter(s => s.indicator === filter)
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Signals</h3>
+          <div className="flex items-center space-x-2">
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as SignalFilter)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="ALL">All</option>
+              <option value="RSI">RSI</option>
+              <option value="EMA">EMA</option>
+              <option value="MACD">MACD</option>
+              <option value="BOLLINGER">Bollinger</option>
+              <option value="ATR">ATR</option>
+            </select>
+            <button onClick={() => refetchSignals()} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50">Refresh</button>
+          </div>
+        </div>
+
+        {signalsLoading ? (
+          <div className="text-gray-600">Loading signals...</div>
+        ) : signalsError ? (
+          <ErrorMessage message="Failed to load signals" onRetry={refetchSignals} />
+        ) : list.length === 0 ? (
+          <div className="text-gray-600">No active signals</div>
+        ) : (
+          <div className="space-y-3">
+            {list.map((s, idx) => (
+              <div key={idx} className="bg-white rounded-xl shadow-md p-4 border border-gray-200 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${s.type === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.type}</span>
+                    <span className="text-sm font-medium text-gray-700">{s.indicator}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${s.strength === 'strong' ? 'bg-purple-100 text-purple-700' : s.strength === 'moderate' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>{s.strength}</span>
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">{s.reason}</div>
+                </div>
+                <div className="text-xs text-gray-500">{new Date(s.timestamp).toLocaleDateString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Define tabs
   const tabs: TabItem[] = [
     {
@@ -335,6 +390,11 @@ export default function StockDetailScreen({ stock, onBack }: StockDetailScreenPr
       id: 'technicals',
       label: 'Technicals',
       content: <TechnicalsTab />
+    },
+    {
+      id: 'signals',
+      label: 'Signals',
+      content: <SignalsTab />
     }
   ]
 

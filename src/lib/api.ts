@@ -27,6 +27,15 @@ export interface ChartDataPoint {
   volume?: number
 }
 
+export interface DailyBar {
+  time: string | Date
+  open: number
+  high: number
+  low: number
+  close: number
+  volume?: number
+}
+
 export interface StockFundamentals {
   symbol: string
   marketCap: number // in crores
