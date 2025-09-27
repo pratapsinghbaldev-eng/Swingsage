@@ -27,7 +27,8 @@ export default function ScreenerPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [suggestions, setSuggestions] = useState<{ symbol: string, name: string }[]>([])
   const [showSug, setShowSug] = useState(false)
-  const [selected, setSelected] = useState<ScreenerFilterId[]>(['rsiOversold'])
+  const [bullish, setBullish] = useState<ScreenerFilterId[]>(['rsiOversold','emaBullish','macdBullish','bbBreakoutUp'])
+  const [bearish, setBearish] = useState<ScreenerFilterId[]>(['rsiOverbought','emaBearish','macdBearish','bbBreakdown'])
   const { mutateAsync, data, isPending, reset } = useScreener()
   const [requireTwoPlus, setRequireTwoPlus] = useState(true)
   const [minConfidence, setMinConfidence] = useState(70)
@@ -36,11 +37,15 @@ export default function ScreenerPage() {
   const runScreener = async () => {
     const typed = symbolsInput.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     const symbols = Array.from(new Set([...typed, ...selectedSymbols, ...selectedIndices]))
-    await mutateAsync({ symbols: symbols.length ? symbols : undefined, filters: selected, minConfidence: minConfidence / 100, requireTwoPlus, requireWeeklyAgree })
+    const filters = Array.from(new Set([...bullish, ...bearish]))
+    await mutateAsync({ symbols: symbols.length ? symbols : undefined, filters, minConfidence: minConfidence / 100, requireTwoPlus, requireWeeklyAgree })
   }
 
-  const toggle = (id: ScreenerFilterId) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const toggleBull = (id: ScreenerFilterId) => {
+    setBullish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+  const toggleBear = (id: ScreenerFilterId) => {
+    setBearish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   const addSymbol = (sym: string) => {
@@ -64,7 +69,8 @@ export default function ScreenerPage() {
     setSymbolsInput('')
     setSearchQuery('')
     setSuggestions([])
-    setSelected([])
+    setBullish([])
+    setBearish([])
     reset()
   }
 
@@ -125,13 +131,27 @@ export default function ScreenerPage() {
               <input value={symbolsInput} onChange={(e) => setSymbolsInput(e.target.value)} placeholder="RELIANCE,TCS,INFY" className="w-full border rounded-lg px-3 py-2" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Filters</label>
-              <div className="flex flex-wrap gap-2">
-                {FILTERS.map(f => (
-                  <button key={f.id} onClick={() => toggle(f.id)} className={`px-3 py-2 rounded-lg text-sm border ${selected.includes(f.id) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}>
-                    {f.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Bullish Filters</label>
+                  <div className="flex flex-wrap gap-2">
+                    {FILTERS.filter(f => ['rsiOversold','emaBullish','macdBullish','bbBreakoutUp','atrSpike','trendReversal'].includes(f.id)).map(f => (
+                      <button key={f.id} onClick={() => toggleBull(f.id)} className={`px-3 py-2 rounded-lg text-sm border ${bullish.includes(f.id) ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Bearish Filters</label>
+                  <div className="flex flex-wrap gap-2">
+                    {FILTERS.filter(f => ['rsiOverbought','emaBearish','macdBearish','bbBreakdown'].includes(f.id)).map(f => (
+                      <button key={f.id} onClick={() => toggleBear(f.id)} className={`px-3 py-2 rounded-lg text-sm border ${bearish.includes(f.id) ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <label className="flex items-center space-x-2">
