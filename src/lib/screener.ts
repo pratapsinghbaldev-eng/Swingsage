@@ -153,11 +153,51 @@ export function evaluateFilters(bars: DailyBar[], filters: ScreenerFilterId[]): 
   return { matched, price }
 }
 
-export function confidenceScore(signals: TradeSignal[]): number {
-  if (signals.length === 0) return 0
-  const map = { weak: 0.6, moderate: 0.8, strong: 1.0 }
-  const avg = signals.reduce((acc, s) => acc + map[s.strength], 0) / signals.length
-  return Math.round(avg * 100) / 100
+// Weighted confidence by indicator with strength multiplier; de-duplicate by indicator (take strongest)
+const INDICATOR_WEIGHTS: Record<TradeSignal['indicator'], number> = {
+  RSI: 0.4,
+  EMA: 0.5,
+  MACD: 0.4,
+  BOLLINGER: 0.6,
+  ATR: 0.3,
+}
+
+export function weightedConfidenceScore(signals: TradeSignal[]): number {
+  if (!signals || signals.length === 0) return 0
+  const strengthFactor = { weak: 0.6, moderate: 0.8, strong: 1.0 }
+  // Keep the strongest per indicator
+  const byIndicator = new Map<TradeSignal['indicator'], TradeSignal>()
+  for (const s of signals) {
+    const current = byIndicator.get(s.indicator)
+    if (!current) { byIndicator.set(s.indicator, s); continue }
+    const a = strengthFactor[s.strength]
+    const b = strengthFactor[current.strength]
+    if (a > b) byIndicator.set(s.indicator, s)
+  }
+  let num = 0
+  let den = 0
+  for (const [indicator, s] of byIndicator) {
+    const w = INDICATOR_WEIGHTS[indicator] || 0
+    den += w
+    num += w * strengthFactor[s.strength]
+  }
+  if (den === 0) return 0
+  const score = num / den
+  return Math.round(score * 100) / 100
+}
+
+export function hasTwoPlusAgreement(signals: TradeSignal[]): { ok: boolean, side: 'BUY' | 'SELL' | null } {
+  if (!signals || signals.length === 0) return { ok: false, side: null }
+  // Count distinct indicators per side
+  const buys = new Set<TradeSignal['indicator']>()
+  const sells = new Set<TradeSignal['indicator']>()
+  for (const s of signals) {
+    if (s.type === 'BUY') buys.add(s.indicator)
+    if (s.type === 'SELL') sells.add(s.indicator)
+  }
+  if (buys.size >= 2) return { ok: true, side: 'BUY' }
+  if (sells.size >= 2) return { ok: true, side: 'SELL' }
+  return { ok: false, side: null }
 }
 
 function average(arr: number[]): number {

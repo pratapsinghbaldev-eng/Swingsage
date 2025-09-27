@@ -29,11 +29,14 @@ export default function ScreenerPage() {
   const [showSug, setShowSug] = useState(false)
   const [selected, setSelected] = useState<ScreenerFilterId[]>(['rsiOversold'])
   const { mutateAsync, data, isPending, reset } = useScreener()
+  const [requireTwoPlus, setRequireTwoPlus] = useState(true)
+  const [minConfidence, setMinConfidence] = useState(70)
+  const [requireWeeklyAgree, setRequireWeeklyAgree] = useState(false)
 
   const runScreener = async () => {
     const typed = symbolsInput.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     const symbols = Array.from(new Set([...typed, ...selectedSymbols, ...selectedIndices]))
-    await mutateAsync({ symbols: symbols.length ? symbols : undefined, filters: selected })
+    await mutateAsync({ symbols: symbols.length ? symbols : undefined, filters: selected, minConfidence: minConfidence / 100, requireTwoPlus, requireWeeklyAgree })
   }
 
   const toggle = (id: ScreenerFilterId) => {
@@ -129,6 +132,20 @@ export default function ScreenerPage() {
                     {f.label}
                   </button>
                 ))}
+              </div>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="flex items-center space-x-2">
+                  <input type="checkbox" checked={requireTwoPlus} onChange={(e) => setRequireTwoPlus(e.target.checked)} />
+                  <span className="text-sm text-gray-700">Require 2+ indicators</span>
+                </label>
+                <label className="flex items-center space-x-2">
+                  <input type="checkbox" checked={requireWeeklyAgree} onChange={(e) => setRequireWeeklyAgree(e.target.checked)} />
+                  <span className="text-sm text-gray-700">Require Daily + Weekly agreement</span>
+                </label>
+                <div>
+                  <label className="block text-sm text-gray-700">Min Confidence: {minConfidence}%</label>
+                  <input type="range" min={50} max={95} value={minConfidence} onChange={(e) => setMinConfidence(parseInt(e.target.value))} className="w-full" />
+                </div>
               </div>
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Indices</label>

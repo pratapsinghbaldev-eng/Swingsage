@@ -16,7 +16,7 @@ export interface ScreenerResultRow {
 }
 
 export function useScreener() {
-  return useMutation<{ success: boolean, results: ScreenerResultRow[] }, Error, { symbols?: string[], filters: ScreenerFilterId[] }>({
+  return useMutation<{ success: boolean, results: ScreenerResultRow[] }, Error, { symbols?: string[], filters: ScreenerFilterId[], requireTwoPlus?: boolean, minConfidence?: number, requireWeeklyAgree?: boolean }>({
     mutationFn: async (payload) => {
       const res = await fetch('/api/screener', {
         method: 'POST',
