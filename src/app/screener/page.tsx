@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useScreener } from '@/hooks/useScreener'
+import { type IndexCode } from '@/lib/index-constituents'
 import type { ScreenerFilterId } from '@/lib/screener'
 
 const FILTERS: { id: ScreenerFilterId, label: string }[] = [
@@ -21,19 +22,57 @@ const FILTERS: { id: ScreenerFilterId, label: string }[] = [
 export default function ScreenerPage() {
   const router = useRouter()
   const [symbolsInput, setSymbolsInput] = useState('')
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([])
+  const [selectedIndices, setSelectedIndices] = useState<IndexCode[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<{ symbol: string, name: string }[]>([])
+  const [showSug, setShowSug] = useState(false)
   const [selected, setSelected] = useState<ScreenerFilterId[]>(['rsiOversold'])
   const { mutateAsync, data, isPending, reset } = useScreener()
 
   const runScreener = async () => {
-    const symbols = symbolsInput
-      .split(',')
-      .map(s => s.trim().toUpperCase())
-      .filter(Boolean)
+    const typed = symbolsInput.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+    const symbols = Array.from(new Set([...typed, ...selectedSymbols, ...selectedIndices]))
     await mutateAsync({ symbols: symbols.length ? symbols : undefined, filters: selected })
   }
 
   const toggle = (id: ScreenerFilterId) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const addSymbol = (sym: string) => {
+    setSelectedSymbols(prev => prev.includes(sym) ? prev : [...prev, sym])
+    setSearchQuery('')
+    setSuggestions([])
+    setShowSug(false)
+  }
+
+  const removeSymbol = (sym: string) => {
+    setSelectedSymbols(prev => prev.filter(s => s !== sym))
+  }
+
+  const toggleIndex = (code: IndexCode) => {
+    setSelectedIndices(prev => prev.includes(code) ? prev.filter(i => i !== code) : [...prev, code])
+  }
+
+  const clearAll = () => {
+    setSelectedSymbols([])
+    setSelectedIndices([])
+    setSymbolsInput('')
+    setSearchQuery('')
+    setSuggestions([])
+    setSelected([])
+    reset()
+  }
+
+  const fetchSuggestions = async (q: string) => {
+    if (q.length < 3) { setSuggestions([]); return }
+    // Reuse existing API /api/search that wraps server-side providers
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+    if (!res.ok) return
+    const json: { stocks?: Array<{ symbol: string, name: string }> } = await res.json()
+    const items = (json.stocks || []).slice(0, 8).map((s) => ({ symbol: s.symbol, name: s.name }))
+    setSuggestions(items)
   }
 
   return (
@@ -47,6 +86,38 @@ export default function ScreenerPage() {
         <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Add Stocks</label>
+              <div className="relative">
+                <input
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); fetchSuggestions(e.target.value); setShowSug(true) }}
+                  onFocus={() => setShowSug(true)}
+                  placeholder="Type to search (min 3 chars)"
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+                {showSug && suggestions.length > 0 && (
+                  <div className="absolute z-50 bg-white border border-gray-200 rounded-lg mt-1 w-full max-h-64 overflow-auto shadow-lg">
+                    {suggestions.map(s => (
+                      <button key={s.symbol} onClick={() => addSymbol(s.symbol)} className="w-full text-left px-3 py-2 hover:bg-gray-50">
+                        <div className="font-medium text-gray-900">{s.symbol}</div>
+                        <div className="text-xs text-gray-600">{s.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedSymbols.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {selectedSymbols.map(s => (
+                    <span key={s} className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-800 border">
+                      {s}
+                      <button onClick={() => removeSymbol(s)} className="ml-2 text-gray-500 hover:text-gray-700">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Symbols (comma-separated)</label>
               <input value={symbolsInput} onChange={(e) => setSymbolsInput(e.target.value)} placeholder="RELIANCE,TCS,INFY" className="w-full border rounded-lg px-3 py-2" />
             </div>
@@ -59,11 +130,29 @@ export default function ScreenerPage() {
                   </button>
                 ))}
               </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Indices</label>
+                <div className="flex flex-wrap gap-2">
+                  {(['NIFTY50','NIFTY100','NIFTY200','NIFTY500','MIDCAP','SMALLCAP'] as IndexCode[]).map(code => (
+                    <button key={code} onClick={() => toggleIndex(code)} className={`px-3 py-2 rounded-lg text-sm border ${selectedIndices.includes(code) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                      {code}
+                    </button>
+                  ))}
+                </div>
+                {selectedIndices.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedIndices.map(ix => (
+                      <span key={ix} className="text-xs px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">{ix}</span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-2">Combine indices with individual stocks. Duplicates are removed automatically.</p>
+              </div>
             </div>
           </div>
           <div className="mt-4">
             <button onClick={runScreener} disabled={isPending} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{isPending ? 'Scanning...' : 'Run Screener'}</button>
-            <button onClick={() => { setSelected([]); setSymbolsInput(''); reset() }} className="ml-3 px-4 py-2 border rounded-lg hover:bg-gray-50">Reset</button>
+            <button onClick={clearAll} className="ml-3 px-4 py-2 border rounded-lg hover:bg-gray-50">Clear All</button>
           </div>
         </div>
 

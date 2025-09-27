@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { NSEAPIManager } from '@/lib/nse-api-providers'
 import { DEFAULT_SYMBOLS, ScreenerInput, evaluateFilters, confidenceScore, type ScreenerRow } from '@/lib/screener'
+import { resolveSymbols, type IndexCode } from '@/lib/index-constituents'
 
 const api = new NSEAPIManager()
 
@@ -11,7 +12,9 @@ const TTL_MS = 60 * 1000
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Partial<ScreenerInput>
-    const symbols = (body.symbols && body.symbols.length ? body.symbols : DEFAULT_SYMBOLS).slice(0, 100)
+    // Accept raw symbols or index codes
+    const raw = (body.symbols && body.symbols.length ? body.symbols : DEFAULT_SYMBOLS).slice(0, 100) as Array<string | IndexCode>
+    const symbols = resolveSymbols(raw).slice(0, 100)
     const filters = body.filters && body.filters.length ? body.filters : []
 
     const cacheKey = JSON.stringify({ symbols, filters })
