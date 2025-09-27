@@ -170,6 +170,14 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
               </div>
             </div>
 
+            {/* Screener Button */}
+            <button
+              onClick={() => router.push('/screener')}
+              className="hidden md:inline-flex px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg"
+            >
+              Stock Screener
+            </button>
+
             {/* Search Icon for mobile */}
             {onSearchClick && (
               <button
