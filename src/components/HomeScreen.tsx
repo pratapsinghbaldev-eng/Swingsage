@@ -170,13 +170,21 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
               </div>
             </div>
 
-            {/* Screener Button */}
-            <button
-              onClick={() => router.push('/screener')}
-              className="hidden md:inline-flex px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg"
-            >
-              Stock Screener
-            </button>
+            {/* Screener Buttons */}
+            <div className="hidden md:flex space-x-2">
+              <button
+                onClick={() => router.push('/screener')}
+                className="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm"
+              >
+                Stock Screener
+              </button>
+              <button
+                onClick={() => router.push('/pivotscreener')}
+                className="px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm"
+              >
+                Pivot Screener
+              </button>
+            </div>
 
             {/* Search Icon for mobile */}
             {onSearchClick && (
@@ -198,6 +206,22 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Market Overview</h2>
           <p className="text-gray-600">Live market indices at a glance</p>
+          
+          {/* Mobile Screener Buttons */}
+          <div className="flex md:hidden space-x-3 mt-4">
+            <button
+              onClick={() => router.push('/screener')}
+              className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+            >
+              Stock Screener
+            </button>
+            <button
+              onClick={() => router.push('/pivotscreener')}
+              className="flex-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+            >
+              Pivot Screener
+            </button>
+          </div>
         </div>
 
         {/* Refresh Button */}
