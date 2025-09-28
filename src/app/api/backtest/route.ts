@@ -2,8 +2,68 @@ import { NextRequest, NextResponse } from 'next/server'
 import { NSEAPIManager } from '@/lib/nse-api-providers'
 import { rsi, ema, macd } from '@/lib/indicators'
 import type { DailyBar } from '@/lib/api'
+import fs from 'fs'
+import path from 'path'
 
 const api = new NSEAPIManager()
+
+// Data caching utilities
+const CACHE_DIR = path.join(process.cwd(), 'data', 'historical')
+
+async function ensureCacheDir() {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true })
+  }
+}
+
+async function getCachedData(symbol: string): Promise<DailyBar[] | null> {
+  try {
+    await ensureCacheDir()
+    const filePath = path.join(CACHE_DIR, `${symbol}.json`)
+    if (fs.existsSync(filePath)) {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+      return data.bars || null
+    }
+  } catch (error) {
+    console.error(`Error reading cache for ${symbol}:`, error)
+  }
+  return null
+}
+
+async function setCachedData(symbol: string, bars: DailyBar[]): Promise<void> {
+  try {
+    await ensureCacheDir()
+    const filePath = path.join(CACHE_DIR, `${symbol}.json`)
+    const data = {
+      symbol,
+      lastUpdated: new Date().toISOString(),
+      bars
+    }
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+  } catch (error) {
+    console.error(`Error writing cache for ${symbol}:`, error)
+  }
+}
+
+async function getHistoricalData(symbol: string, days: number): Promise<DailyBar[]> {
+  // Try cache first
+  const cached = await getCachedData(symbol)
+  if (cached && cached.length >= days) {
+    console.log(`Using cached data for ${symbol}`)
+    return cached.slice(-days) // Return most recent data
+  }
+  
+  // Fetch fresh data
+  console.log(`Fetching fresh data for ${symbol}`)
+  const bars = await api.getDailyOHLC(symbol, days)
+  
+  // Cache the data
+  if (bars.length > 0) {
+    await setCachedData(symbol, bars)
+  }
+  
+  return bars
+}
 
 export type BacktestStrategy = 'pivot-reversal' | 'ema-crossover' | 'rsi-bounce'
 
@@ -275,8 +335,8 @@ export async function POST(req: NextRequest) {
     const daysDiff = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
     const daysToFetch = Math.min(Math.max(daysDiff + 30, 100), 500) // Add buffer, cap at 500
     
-    // Fetch historical data
-    const bars = await api.getDailyOHLC(symbol, daysToFetch)
+    // Fetch historical data with caching
+    const bars = await getHistoricalData(symbol, daysToFetch)
     if (bars.length < 50) {
       return NextResponse.json({ 
         success: false, 

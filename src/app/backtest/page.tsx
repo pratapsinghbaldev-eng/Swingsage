@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useBacktest } from '@/hooks/useBacktest'
 import { useStockSearch } from '@/hooks/useStockSearch'
@@ -39,6 +39,7 @@ export default function BacktestPage() {
   const [toDate, setToDate] = useState('2024-12-31')
   const [strategy, setStrategy] = useState<BacktestStrategy>('pivot-reversal')
   const [riskPerTrade, setRiskPerTrade] = useState(2)
+  const [autoRunExecuted, setAutoRunExecuted] = useState(false)
   
   const [debouncedQuery] = useDebounce(searchQuery, 300)
   
@@ -48,6 +49,46 @@ export default function BacktestPage() {
     debouncedQuery, 
     debouncedQuery.length >= 2
   )
+  
+  const handleRunBacktest = useCallback(async () => {
+    if (!selectedSymbol) return
+    
+    try {
+      await runBacktest({
+        symbol: selectedSymbol,
+        from: fromDate,
+        to: toDate,
+        strategy,
+        riskPerTrade
+      })
+    } catch (err) {
+      console.error('Backtest failed:', err)
+    }
+  }, [selectedSymbol, fromDate, toDate, strategy, riskPerTrade, runBacktest])
+  
+  // Handle query parameters and auto-run
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const symbolParam = urlParams.get('symbol')
+    const strategyParam = urlParams.get('strategy') as BacktestStrategy
+    const fromParam = urlParams.get('from')
+    const toParam = urlParams.get('to')
+    const autoRunParam = urlParams.get('autoRun')
+    
+    if (symbolParam) setSelectedSymbol(symbolParam)
+    if (strategyParam && STRATEGIES.find(s => s.value === strategyParam)) setStrategy(strategyParam)
+    if (fromParam) setFromDate(fromParam)
+    if (toParam) setToDate(toParam)
+    
+    // Auto-run backtest if requested and not already executed
+    if (autoRunParam === 'true' && symbolParam && !autoRunExecuted) {
+      setAutoRunExecuted(true)
+      // Small delay to ensure state is set
+      setTimeout(() => {
+        handleRunBacktest()
+      }, 100)
+    }
+  }, [autoRunExecuted, handleRunBacktest])
   
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -79,22 +120,6 @@ export default function BacktestPage() {
     setSelectedSymbol('')
     setSearchQuery('')
     setShowDropdown(false)
-  }
-  
-  const handleRunBacktest = async () => {
-    if (!selectedSymbol) return
-    
-    try {
-      await runBacktest({
-        symbol: selectedSymbol,
-        from: fromDate,
-        to: toDate,
-        strategy,
-        riskPerTrade
-      })
-    } catch (err) {
-      console.error('Backtest failed:', err)
-    }
   }
   
   const clearResults = () => {

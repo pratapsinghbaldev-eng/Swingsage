@@ -46,7 +46,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
 
       {/* Tagline */}
       <p className="text-xl md:text-2xl text-blue-100 font-light text-center max-w-md px-4">
-        Smart Stock Analysis Made Simple
+        Swing trades by Baldev
       </p>
 
       {/* Loading indicator */}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { usePivotScreener } from '@/hooks/usePivotScreener'
 import { type IndexCode } from '@/lib/index-constituents'
 import type { PivotLevel, PivotScreenerFilters } from '@/app/api/pivotscreener/route'
+import { BarChart3 } from 'lucide-react'
 
 const PIVOT_LEVELS: { value: PivotLevel, label: string, description: string }[] = [
   { value: 'PP', label: 'Pivot Point (PP)', description: 'Central pivot level' },
@@ -60,6 +61,29 @@ export default function PivotScreenerPage() {
   const formatPrice = (price: number) => `₹${price.toFixed(2)}`
   
   const formatPercentage = (percentage: number) => `${percentage.toFixed(2)}%`
+
+  const handleBacktest = (symbol: string, proximityLevel: PivotLevel) => {
+    // Determine strategy based on proximity level
+    let strategy = 'pivot-reversal'
+    if (proximityLevel === 'PP') {
+      strategy = 'pivot-reversal'
+    } else if (proximityLevel === 'S1' || proximityLevel === 'S2') {
+      strategy = 'pivot-reversal'
+    } else {
+      strategy = 'ema-crossover' // For R1, R2 use trend following
+    }
+    
+    // Navigate to backtest page with pre-filled parameters
+    const params = new URLSearchParams({
+      symbol,
+      strategy,
+      from: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 6 months ago
+      to: new Date().toISOString().split('T')[0], // today
+      autoRun: 'true'
+    })
+    
+    router.push(`/backtest?${params.toString()}`)
+  }
 
   const getPivotLevelColor = (level: PivotLevel) => {
     switch (level) {
@@ -272,83 +296,98 @@ export default function PivotScreenerPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
-                    <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
-                      <th className="p-3 font-medium">Symbol</th>
-                      <th className="p-3 font-medium">Price</th>
-                      <th className="p-3 font-medium">Pivot Level</th>
-                      <th className="p-3 font-medium">Distance</th>
-                      <th className="p-3 font-medium">RSI</th>
-                      <th className="p-3 font-medium">MACD</th>
-                      <th className="p-3 font-medium">EMA Trend</th>
-                      <th className="p-3 font-medium">Setup</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.results.map(row => (
-                      <tr 
-                        key={row.symbol} 
-                        className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                        onClick={() => router.push(`/stock/${row.symbol}`)}
-                      >
-                        <td className="p-3">
-                          <span className="font-semibold text-gray-900">{row.symbol}</span>
-                        </td>
-                        <td className="p-3">
-                          <span className="font-medium">{formatPrice(row.price)}</span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${getPivotLevelColor(row.proximity.level)}`}>
-                            {row.proximity.level}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <div className="text-sm">
-                            <div className="font-medium">{formatPercentage(row.proximity.percentage)}</div>
-                            <div className="text-xs text-gray-500">
-                              {formatPrice(row.proximity.distance)}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          {row.indicators.rsi ? (
-                            <span className={`text-sm font-medium ${
-                              row.indicators.rsi < 30 ? 'text-green-600' : 
-                              row.indicators.rsi > 70 ? 'text-red-600' : 'text-gray-600'
-                            }`}>
-                              {row.indicators.rsi.toFixed(1)}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">N/A</span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <span className={`text-xs px-2 py-1 rounded font-medium ${
-                            row.indicators.macdSignal === 'BULLISH' ? 'text-green-700 bg-green-100' :
-                            row.indicators.macdSignal === 'BEARISH' ? 'text-red-700 bg-red-100' :
-                            'text-gray-600 bg-gray-100'
-                          }`}>
-                            {row.indicators.macdSignal}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`text-xs px-2 py-1 rounded font-medium ${
-                            row.indicators.emaSignal === 'UP' ? 'text-green-700 bg-green-100' :
-                            row.indicators.emaSignal === 'DOWN' ? 'text-red-700 bg-red-100' :
-                            'text-gray-600 bg-gray-100'
-                          }`}>
-                            {row.indicators.emaSignal}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${getSetupColor(row.matchedSetup)}`}>
-                            {row.matchedSetup}
-                          </span>
-                        </td>
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
+                        <th className="p-3 font-medium">Symbol</th>
+                        <th className="p-3 font-medium">Price</th>
+                        <th className="p-3 font-medium">Pivot Level</th>
+                        <th className="p-3 font-medium">Distance</th>
+                        <th className="p-3 font-medium">RSI</th>
+                        <th className="p-3 font-medium">MACD</th>
+                        <th className="p-3 font-medium">EMA Trend</th>
+                        <th className="p-3 font-medium">Setup</th>
+                        <th className="p-3 font-medium">Backtest</th>
                       </tr>
-                    ))}
-                  </tbody>
+                    </thead>
+                    <tbody>
+                      {data.results.map(row => (
+                        <tr 
+                          key={row.symbol} 
+                          className="border-b border-gray-100 hover:bg-gray-50"
+                        >
+                          <td className="p-3">
+                            <button
+                              onClick={() => router.push(`/stock/${row.symbol}`)}
+                              className="font-semibold text-gray-900 hover:text-blue-600 cursor-pointer"
+                            >
+                              {row.symbol}
+                            </button>
+                          </td>
+                          <td className="p-3">
+                            <span className="font-medium">{formatPrice(row.price)}</span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${getPivotLevelColor(row.proximity.level)}`}>
+                              {row.proximity.level}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm">
+                              <div className="font-medium">{formatPercentage(row.proximity.percentage)}</div>
+                              <div className="text-xs text-gray-500">
+                                {formatPrice(row.proximity.distance)}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            {row.indicators.rsi ? (
+                              <span className={`text-sm font-medium ${
+                                row.indicators.rsi < 30 ? 'text-green-600' : 
+                                row.indicators.rsi > 70 ? 'text-red-600' : 'text-gray-600'
+                              }`}>
+                                {row.indicators.rsi.toFixed(1)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">N/A</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span className={`text-xs px-2 py-1 rounded font-medium ${
+                              row.indicators.macdSignal === 'BULLISH' ? 'text-green-700 bg-green-100' :
+                              row.indicators.macdSignal === 'BEARISH' ? 'text-red-700 bg-red-100' :
+                              'text-gray-600 bg-gray-100'
+                            }`}>
+                              {row.indicators.macdSignal}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`text-xs px-2 py-1 rounded font-medium ${
+                              row.indicators.emaSignal === 'UP' ? 'text-green-700 bg-green-100' :
+                              row.indicators.emaSignal === 'DOWN' ? 'text-red-700 bg-red-100' :
+                              'text-gray-600 bg-gray-100'
+                            }`}>
+                              {row.indicators.emaSignal}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${getSetupColor(row.matchedSetup)}`}>
+                              {row.matchedSetup}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <button
+                              onClick={() => handleBacktest(row.symbol, row.proximity.level)}
+                              className="flex items-center space-x-1 px-2 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors duration-200"
+                              title={`Backtest ${row.symbol} pivot strategy`}
+                            >
+                              <BarChart3 className="w-3 h-3" />
+                              <span>Test</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
                 </table>
               </div>
             )}
