@@ -170,7 +170,7 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
               </div>
             </div>
 
-            {/* Screener Buttons */}
+            {/* Navigation Buttons */}
             <div className="hidden md:flex space-x-2">
               <button
                 onClick={() => router.push('/screener')}
@@ -183,6 +183,12 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
                 className="px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm"
               >
                 Pivot Screener
+              </button>
+              <button
+                onClick={() => router.push('/backtest')}
+                className="px-3 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm"
+              >
+                Backtest
               </button>
             </div>
 
@@ -207,19 +213,25 @@ export default function HomeScreen({ onSearchClick }: HomeScreenProps) {
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Market Overview</h2>
           <p className="text-gray-600">Live market indices at a glance</p>
           
-          {/* Mobile Screener Buttons */}
-          <div className="flex md:hidden space-x-3 mt-4">
+          {/* Mobile Navigation Buttons */}
+          <div className="flex md:hidden space-x-2 mt-4">
             <button
               onClick={() => router.push('/screener')}
-              className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+              className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-200 shadow-md hover:shadow-lg text-xs font-medium"
             >
-              Stock Screener
+              Screener
             </button>
             <button
               onClick={() => router.push('/pivotscreener')}
-              className="flex-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+              className="flex-1 px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors duration-200 shadow-md hover:shadow-lg text-xs font-medium"
             >
-              Pivot Screener
+              Pivots
+            </button>
+            <button
+              onClick={() => router.push('/backtest')}
+              className="flex-1 px-3 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors duration-200 shadow-md hover:shadow-lg text-xs font-medium"
+            >
+              Backtest
             </button>
           </div>
         </div>
