@@ -7,7 +7,7 @@ import { type IndexCode } from '@/lib/index-constituents'
 import type { PivotLevel, PivotScreenerFilters } from '@/app/api/pivotscreener/route'
 import { BarChart3, Info } from 'lucide-react'
 import type { StrategyName } from '@/lib/strategies'
-import { getStrategyDisplayName, getStrategyDescription } from '@/lib/strategies'
+import { getStrategyDisplayName } from '@/lib/strategies'
 
 const PIVOT_LEVELS: { value: PivotLevel, label: string, description: string }[] = [
   { value: 'PP', label: 'Pivot Point (PP)', description: 'Central pivot level' },

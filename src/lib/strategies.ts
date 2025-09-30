@@ -3,7 +3,7 @@
  * Implements 5 long-only strategies combining pivot points with multi-timeframe analysis
  */
 
-import { rsi, ema, macd, atr } from './indicators'
+import { rsi, ema, macd } from './indicators'
 import type { DailyBar } from './api'
 
 export type StrategyName = 
@@ -18,7 +18,7 @@ export interface StrategyResult {
   signal: boolean
   confidence: number // 0-100
   reason: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, number | string | boolean>
 }
 
 export interface PivotPoints {
