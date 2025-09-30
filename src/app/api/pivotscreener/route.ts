@@ -3,6 +3,14 @@ import { NSEAPIManager } from '@/lib/nse-api-providers'
 import { resolveSymbols, type IndexCode } from '@/lib/index-constituents'
 import { rsi, ema, macd } from '@/lib/indicators'
 import type { DailyBar } from '@/lib/api'
+import { 
+  evaluateAllStrategies, 
+  calculateCamarillaPivots,
+  type StrategyName,
+  type StrategyResult,
+  type MultiTimeframeData,
+  type PivotPoints
+} from '@/lib/strategies'
 
 const api = new NSEAPIManager()
 
@@ -10,11 +18,12 @@ const api = new NSEAPIManager()
 const cache = new Map<string, { timestamp: number, data: PivotScreenerRow[] }>()
 const TTL_MS = 60 * 1000
 
-export type PivotLevel = 'PP' | 'S1' | 'S2' | 'R1' | 'R2'
+export type PivotLevel = 'PP' | 'S1' | 'R1'
 
 export interface PivotScreenerFilters {
   universe: IndexCode
-  proximity: PivotLevel
+  proximity?: PivotLevel
+  strategies?: StrategyName[]
   rsiBelow?: number
   rsiAbove?: number
   macdBullish?: boolean
@@ -30,9 +39,11 @@ export interface PivotScreenerRow {
   pivotPoints: {
     PP: number
     S1: number
-    S2: number
+    S2?: number
+    S3?: number
     R1: number
-    R2: number
+    R2?: number
+    R3?: number
   }
   proximity: {
     level: PivotLevel
@@ -46,12 +57,14 @@ export interface PivotScreenerRow {
   }
   volume?: number
   matchedSetup: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+  matchedStrategies?: StrategyResult[]
+  confidence?: number
 }
 
 type PivotScreenerBody = Partial<PivotScreenerFilters>
 
 // Calculate pivot points from weekly OHLC
-function calculatePivotPoints(weeklyBars: DailyBar[]) {
+function calculatePivotPoints(weeklyBars: DailyBar[]): PivotPoints | null {
   if (weeklyBars.length === 0) return null
   
   // Use last week's data (last 5 trading days)
@@ -70,13 +83,11 @@ function calculatePivotPoints(weeklyBars: DailyBar[]) {
 }
 
 // Find closest pivot level and distance
-function findClosestPivot(price: number, pivots: { PP: number, S1: number, S2: number, R1: number, R2: number }) {
+function findClosestPivot(price: number, pivots: PivotPoints) {
   const levels: Array<{ level: PivotLevel, value: number }> = [
     { level: 'PP', value: pivots.PP },
     { level: 'S1', value: pivots.S1 },
-    { level: 'S2', value: pivots.S2 },
-    { level: 'R1', value: pivots.R1 },
-    { level: 'R2', value: pivots.R2 }
+    { level: 'R1', value: pivots.R1 }
   ]
   
   let closest = levels[0]
@@ -98,10 +109,32 @@ function findClosestPivot(price: number, pivots: { PP: number, S1: number, S2: n
 }
 
 // Check if price is near specified pivot level
-function isNearPivotLevel(price: number, pivots: { PP: number, S1: number, S2: number, R1: number, R2: number }, targetLevel: PivotLevel, tolerance: number = 1.0) {
+function isNearPivotLevel(price: number, pivots: PivotPoints, targetLevel: PivotLevel, tolerance: number = 1.0) {
   const targetValue = pivots[targetLevel]
   const percentage = Math.abs((price - targetValue) / price) * 100
   return percentage <= tolerance
+}
+
+/**
+ * Fetch multi-timeframe data for strategy evaluation
+ */
+async function fetchMultiTimeframeData(symbol: string): Promise<MultiTimeframeData | null> {
+  try {
+    // Fetch daily data (100 bars for EMA200 calculation)
+    const daily = await api.getDailyOHLC(symbol, 250)
+    if (daily.length < 50) return null
+
+    // For now, we'll simulate 4h and 1h data by resampling daily data
+    // In production, you'd fetch actual intraday data from Yahoo/Alpha Vantage
+    // For this implementation, we'll use daily data as a proxy
+    const h4 = daily.slice(-30) // Last 30 days as 4h proxy
+    const h1 = daily.slice(-10) // Last 10 days as 1h proxy
+
+    return { daily, h4, h1 }
+  } catch (error) {
+    console.error(`Failed to fetch multi-timeframe data for ${symbol}:`, error)
+    return null
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -110,7 +143,8 @@ export async function POST(req: NextRequest) {
     
     // Default filters
     const universe = body.universe || 'NIFTY50'
-    const proximity = body.proximity || 'PP'
+    const proximity = body.proximity
+    const strategies = body.strategies || []
     const rsiBelow = body.rsiBelow
     const rsiAbove = body.rsiAbove
     const macdBullish = body.macdBullish
@@ -135,110 +169,197 @@ export async function POST(req: NextRequest) {
     }
     
     const results: PivotScreenerRow[] = []
+    const useStrategies = strategies.length > 0
     
     for (const symbol of symbols) {
       try {
-        // Get daily OHLC data for last 30 days
-        const bars = await api.getDailyOHLC(symbol, 30)
-        if (bars.length < 10) continue
+        // Fetch data based on mode
+        let bars: DailyBar[]
+        let multiTimeframeData: MultiTimeframeData | null = null
+        
+        if (useStrategies) {
+          // Fetch multi-timeframe data for strategies
+          multiTimeframeData = await fetchMultiTimeframeData(symbol)
+          if (!multiTimeframeData) continue
+          bars = multiTimeframeData.daily
+        } else {
+          // Simple mode: just daily data
+          bars = await api.getDailyOHLC(symbol, 30)
+          if (bars.length < 10) continue
+        }
         
         // Calculate pivot points
-        const pivotPoints = calculatePivotPoints(bars)
+        const pivotPoints = useStrategies 
+          ? calculateCamarillaPivots(bars)
+          : calculatePivotPoints(bars)
+        
         if (!pivotPoints) continue
         
         const currentPrice = bars[bars.length - 1].close
         const currentVolume = bars[bars.length - 1].volume || 0
         
-        // Check if price is near the specified pivot level
-        if (!isNearPivotLevel(currentPrice, pivotPoints, proximity, proximity === 'PP' ? 0.5 : 1.0)) {
-          continue
-        }
-        
-        // Calculate indicators
-        const closes = bars.map(b => b.close)
-        const rsi14 = rsi(closes, 14)
-        const ema20 = ema(closes, 20)
-        const ema50 = ema(closes, 50)
-        const macdData = macd(closes, 12, 26, 9)
-        
-        const currentRSI = rsi14[rsi14.length - 1]
-        const currentEMA20 = ema20[ema20.length - 1]
-        const currentEMA50 = ema50[ema50.length - 1]
-        const currentMACD = macdData.macdLine[macdData.macdLine.length - 1]
-        const currentSignal = macdData.signalLine[macdData.signalLine.length - 1]
-        const prevMACD = macdData.macdLine[macdData.macdLine.length - 2]
-        const prevSignal = macdData.signalLine[macdData.signalLine.length - 2]
-        
-        // Apply filters
-        if (rsiBelow !== undefined && (currentRSI === null || currentRSI >= rsiBelow)) continue
-        if (rsiAbove !== undefined && (currentRSI === null || currentRSI <= rsiAbove)) continue
-        if (volumeMin !== undefined && currentVolume < volumeMin) continue
-        
-        // MACD signal
-        let macdSignal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL'
-        if (currentMACD !== null && currentSignal !== null && prevMACD !== null && prevSignal !== null) {
-          if (prevMACD <= prevSignal && currentMACD > currentSignal) {
-            macdSignal = 'BULLISH'
-          } else if (prevMACD >= prevSignal && currentMACD < currentSignal) {
-            macdSignal = 'BEARISH'
+        // Strategy-based filtering
+        if (useStrategies && multiTimeframeData) {
+          // Evaluate selected strategies
+          const allStrategyResults = evaluateAllStrategies(multiTimeframeData)
+          const matchedStrategies = allStrategyResults.filter(
+            result => result.signal && strategies.includes(result.strategy)
+          )
+          
+          // Skip if no strategies matched
+          if (matchedStrategies.length === 0) continue
+          
+          // Calculate average confidence
+          const avgConfidence = matchedStrategies.reduce((sum, s) => sum + s.confidence, 0) / matchedStrategies.length
+          
+          // Calculate indicators for display
+          const closes = bars.map(b => b.close)
+          const rsi14 = rsi(closes, 14)
+          const ema20 = ema(closes, 20)
+          const ema50 = ema(closes, 50)
+          const macdData = macd(closes, 12, 26, 9)
+          
+          const currentRSI = rsi14[rsi14.length - 1]
+          const currentEMA20 = ema20[ema20.length - 1]
+          const currentEMA50 = ema50[ema50.length - 1]
+          const currentMACD = macdData.macdLine[macdData.macdLine.length - 1]
+          const currentSignal = macdData.signalLine[macdData.signalLine.length - 1]
+          const prevMACD = macdData.macdLine[macdData.macdLine.length - 2]
+          const prevSignal = macdData.signalLine[macdData.signalLine.length - 2]
+          
+          // MACD signal
+          let macdSignal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL'
+          if (currentMACD !== null && currentSignal !== null && prevMACD !== null && prevSignal !== null) {
+            if (prevMACD <= prevSignal && currentMACD > currentSignal) {
+              macdSignal = 'BULLISH'
+            } else if (prevMACD >= prevSignal && currentMACD < currentSignal) {
+              macdSignal = 'BEARISH'
+            }
           }
-        }
-        
-        if (macdBullish && macdSignal !== 'BULLISH') continue
-        if (macdBearish && macdSignal !== 'BEARISH') continue
-        
-        // EMA trend signal
-        let emaSignal: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL'
-        if (currentEMA20 !== null && currentEMA50 !== null) {
-          if (currentPrice > currentEMA20 && currentEMA20 > currentEMA50) {
-            emaSignal = 'UP'
-          } else if (currentPrice < currentEMA20 && currentEMA20 < currentEMA50) {
-            emaSignal = 'DOWN'
+          
+          // EMA trend signal
+          let emaSignal: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL'
+          if (currentEMA20 !== null && currentEMA50 !== null) {
+            if (currentPrice > currentEMA20 && currentEMA20 > currentEMA50) {
+              emaSignal = 'UP'
+            } else if (currentPrice < currentEMA20 && currentEMA20 < currentEMA50) {
+              emaSignal = 'DOWN'
+            }
           }
-        }
-        
-        if (emaTrendUp && emaSignal !== 'UP') continue
-        if (emaTrendDown && emaSignal !== 'DOWN') continue
-        
-        // Determine overall setup
-        let matchedSetup: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL'
-        
-        // Near support levels (S1, S2) with bullish indicators = BULLISH
-        if ((proximity === 'S1' || proximity === 'S2') && 
-            (macdSignal === 'BULLISH' || emaSignal === 'UP' || (currentRSI !== null && currentRSI < 40))) {
-          matchedSetup = 'BULLISH'
-        }
-        
-        // Near resistance levels (R1, R2) with bearish indicators = BEARISH
-        if ((proximity === 'R1' || proximity === 'R2') && 
-            (macdSignal === 'BEARISH' || emaSignal === 'DOWN' || (currentRSI !== null && currentRSI > 60))) {
-          matchedSetup = 'BEARISH'
-        }
-        
-        // Near pivot point - depends on other indicators
-        if (proximity === 'PP') {
-          if (macdSignal === 'BULLISH' || emaSignal === 'UP') {
+          
+          const proximityInfo = findClosestPivot(currentPrice, pivotPoints)
+          
+          results.push({
+            symbol,
+            price: currentPrice,
+            pivotPoints,
+            proximity: proximityInfo,
+            indicators: {
+              rsi: currentRSI || undefined,
+              macdSignal,
+              emaSignal
+            },
+            volume: currentVolume,
+            matchedSetup: 'BULLISH', // Strategies are all long-only
+            matchedStrategies,
+            confidence: avgConfidence
+          })
+          
+        } else {
+          // Legacy proximity-based filtering
+          if (!proximity) continue
+          
+          // Check if price is near the specified pivot level
+          if (!isNearPivotLevel(currentPrice, pivotPoints, proximity, proximity === 'PP' ? 0.5 : 1.0)) {
+            continue
+          }
+          
+          // Calculate indicators
+          const closes = bars.map(b => b.close)
+          const rsi14 = rsi(closes, 14)
+          const ema20 = ema(closes, 20)
+          const ema50 = ema(closes, 50)
+          const macdData = macd(closes, 12, 26, 9)
+          
+          const currentRSI = rsi14[rsi14.length - 1]
+          const currentEMA20 = ema20[ema20.length - 1]
+          const currentEMA50 = ema50[ema50.length - 1]
+          const currentMACD = macdData.macdLine[macdData.macdLine.length - 1]
+          const currentSignal = macdData.signalLine[macdData.signalLine.length - 1]
+          const prevMACD = macdData.macdLine[macdData.macdLine.length - 2]
+          const prevSignal = macdData.signalLine[macdData.signalLine.length - 2]
+          
+          // Apply filters
+          if (rsiBelow !== undefined && (currentRSI === null || currentRSI >= rsiBelow)) continue
+          if (rsiAbove !== undefined && (currentRSI === null || currentRSI <= rsiAbove)) continue
+          if (volumeMin !== undefined && currentVolume < volumeMin) continue
+          
+          // MACD signal
+          let macdSignal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL'
+          if (currentMACD !== null && currentSignal !== null && prevMACD !== null && prevSignal !== null) {
+            if (prevMACD <= prevSignal && currentMACD > currentSignal) {
+              macdSignal = 'BULLISH'
+            } else if (prevMACD >= prevSignal && currentMACD < currentSignal) {
+              macdSignal = 'BEARISH'
+            }
+          }
+          
+          if (macdBullish && macdSignal !== 'BULLISH') continue
+          if (macdBearish && macdSignal !== 'BEARISH') continue
+          
+          // EMA trend signal
+          let emaSignal: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL'
+          if (currentEMA20 !== null && currentEMA50 !== null) {
+            if (currentPrice > currentEMA20 && currentEMA20 > currentEMA50) {
+              emaSignal = 'UP'
+            } else if (currentPrice < currentEMA20 && currentEMA20 < currentEMA50) {
+              emaSignal = 'DOWN'
+            }
+          }
+          
+          if (emaTrendUp && emaSignal !== 'UP') continue
+          if (emaTrendDown && emaSignal !== 'DOWN') continue
+          
+          // Determine overall setup
+          let matchedSetup: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL'
+          
+          // Near support levels (S1) with bullish indicators = BULLISH
+          if (proximity === 'S1' && 
+              (macdSignal === 'BULLISH' || emaSignal === 'UP' || (currentRSI !== null && currentRSI < 40))) {
             matchedSetup = 'BULLISH'
-          } else if (macdSignal === 'BEARISH' || emaSignal === 'DOWN') {
+          }
+          
+          // Near resistance levels (R1) with bearish indicators = BEARISH
+          if (proximity === 'R1' && 
+              (macdSignal === 'BEARISH' || emaSignal === 'DOWN' || (currentRSI !== null && currentRSI > 60))) {
             matchedSetup = 'BEARISH'
           }
+          
+          // Near pivot point - depends on other indicators
+          if (proximity === 'PP') {
+            if (macdSignal === 'BULLISH' || emaSignal === 'UP') {
+              matchedSetup = 'BULLISH'
+            } else if (macdSignal === 'BEARISH' || emaSignal === 'DOWN') {
+              matchedSetup = 'BEARISH'
+            }
+          }
+          
+          const proximityInfo = findClosestPivot(currentPrice, pivotPoints)
+          
+          results.push({
+            symbol,
+            price: currentPrice,
+            pivotPoints,
+            proximity: proximityInfo,
+            indicators: {
+              rsi: currentRSI || undefined,
+              macdSignal,
+              emaSignal
+            },
+            volume: currentVolume,
+            matchedSetup
+          })
         }
-        
-        const proximityInfo = findClosestPivot(currentPrice, pivotPoints)
-        
-        results.push({
-          symbol,
-          price: currentPrice,
-          pivotPoints,
-          proximity: proximityInfo,
-          indicators: {
-            rsi: currentRSI || undefined,
-            macdSignal,
-            emaSignal
-          },
-          volume: currentVolume,
-          matchedSetup
-        })
         
       } catch (error) {
         console.error(`Error processing ${symbol}:`, error)
@@ -246,12 +367,18 @@ export async function POST(req: NextRequest) {
       }
     }
     
-    // Sort by setup priority (BULLISH/BEARISH first) then by proximity percentage
-    results.sort((a, b) => {
-      if (a.matchedSetup !== 'NEUTRAL' && b.matchedSetup === 'NEUTRAL') return -1
-      if (a.matchedSetup === 'NEUTRAL' && b.matchedSetup !== 'NEUTRAL') return 1
-      return a.proximity.percentage - b.proximity.percentage
-    })
+    // Sort results
+    if (useStrategies) {
+      // Sort by confidence (highest first)
+      results.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
+    } else {
+      // Sort by setup priority then by proximity percentage
+      results.sort((a, b) => {
+        if (a.matchedSetup !== 'NEUTRAL' && b.matchedSetup === 'NEUTRAL') return -1
+        if (a.matchedSetup === 'NEUTRAL' && b.matchedSetup !== 'NEUTRAL') return 1
+        return a.proximity.percentage - b.proximity.percentage
+      })
+    }
     
     cache.set(cacheKey, { timestamp: now, data: results })
     return NextResponse.json({ 
